@@ -48,8 +48,7 @@ import cloudinary
 from dotenv import load_dotenv
 import os
 
-def configure():
-    load_dotenv()
+load_dotenv()
 
 cloudinary.config(
     cloud_name=os.getenv('CLOUD_NAME'),
