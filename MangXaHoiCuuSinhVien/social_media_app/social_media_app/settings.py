@@ -39,9 +39,23 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app.apps.AppConfig'
+    'app.apps.AppConfig',
+    'cloudinary',
+    'cloudinary_storage'
 ]
 
+import cloudinary
+from dotenv import load_dotenv
+import os
+
+def configure():
+    load_dotenv()
+
+cloudinary.config(
+    cloud_name=os.getenv('cloud_name'),
+    api_key=os.getenv('api_key'),
+    api_secret=os.getenv('api_secret')
+)
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

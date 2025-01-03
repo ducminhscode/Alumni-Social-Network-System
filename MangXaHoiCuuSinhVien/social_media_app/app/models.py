@@ -1,74 +1,143 @@
 from operator import truediv
 from tkinter.constants import CASCADE
 
-from ckeditor.fields import RichTextField
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from enum import Enum
-
+from cloudinary.models import CloudinaryField
 
 class BaseModel(models.Model):
     created_date = models.DateField(auto_now_add=True, null=True)
     updated_date = models.DateField(auto_now=True,null=True)
-    deleted_date = models.DateField(null=True, blank=True)
     active = models.BooleanField(default=True)
 
     class Meta:
         abstract = True
-        ordering = ['-id']
-
-class Role(Enum):
-    ALUMNI = 'alumni'
-    TEACHER ='teacher'
-
-    def choices(cls):
-        return [(Role.value, Role.name) for role in cls]
-
-# class Role(BaseModel):
-#     role_name = models.CharField(max_length=255)
-#
-#     def __str__(self):
-#         return self.role_name
 
 
 class User(AbstractUser):
-    avatar = models.ImageField(upload_to="images/accounts/avatar/%Y/%m", null=True,blank=True)
+    avatar = CloudinaryField('avatar-user', null=False,blank=True)
+    cover_avatar = CloudinaryField('cover-avatar-user', null=True, blank=True)
     gender = models.BooleanField(default=True, null=True)
     role_choices = [
         (1, 'Alumni'),
         (2, 'Teacher'),
     ]
     role = models.IntegerField(
-        max_length=255,
         choices=role_choices,
         default=1,
     )
-    # phone_number = models.CharField(max_length=255, unique=True, null=True)
-    # date_of_birth = models.DateField(null=True)
-    # role = models.ForeignKey(Role, on_delete=models.CASCADE)
-    # role = models.CharField(max_length=255, choices=Role.choices(), default=Role.ALUMNI.value)
 
     def __str__(self):
         return self.username
+    
 
-
-# class Teacher(BaseModel):
-#     user = models.OneToOneField(User, on_delete=models.CASCADE)
-
-
-class Alumni(BaseModel):
+class RegisterRequest(models.Model):
     alumni_id = models.CharField(max_length=255)
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    is_pending = models.BooleanField(default=True)
+    user = models.OneToOneField(User, on_delete=models.PROTECT, primary_key=True)
 
 
-class AbstractPost(BaseModel):
-    class Meta:
-        abstract = True
-        ordering = ['-id']
-
-    post_content = models.TextField()
+class Post(BaseModel):
+    content = models.TextField()
     lock_comment = models.BooleanField(default=False)
+    user = models.ForeignKey(User,on_delete=models.CASCADE, null=False)
+
+    def __str__(self):
+        return self.content
+
+class PostImage(models.Model):
+    image = CloudinaryField('posts', null=True, blank=True)
+    post = models.ForeignKey(Post, on_delete=CASCADE, primary_key=True)
 
 
-# class Post(AbstractPost):
-#     user = models.ForeignKey(User, on_delete=CASCADE)
+class SurveyPost(Post):
+    end_time = models.DateTimeField()
+    is_closed = models.BooleanField(default=False)
+
+
+class SurveyQuestionType(models.Model):
+    type_choices = [
+        (1, 'Training Program'),
+        (2, 'Recruitment Information'),
+        (3, 'Income'),
+        (4, 'Employment Situation')
+    ]
+    type_survey = models.IntegerField(
+        choices=type_choices,
+        default=1,
+    )
+
+    def __str__(self):
+        return self.type_survey
+
+
+class SurveyQuestion(models.Model):
+    content_question = models.TextField()
+    survey_post = models.ForeignKey(SurveyPost,  on_delete=CASCADE)
+    survey_question_type = models.ForeignKey(SurveyQuestionType, on_delete=CASCADE)
+
+    def __str__(self):
+        return self.content_question
+
+
+class SurveyQuestionOption(models.Model):
+    option_value = models.TextField()
+    multi_choices = models.BooleanField(default=False)
+    survey_question = models.ForeignKey(SurveyQuestion, on_delete=CASCADE)
+    user = models.ManyToManyField(User, blank=True)
+
+    def __str__(self):
+        return self.option_value
+
+
+class Group(models.Model):
+    name = models.CharField(max_length=255)
+    user = models.ManyToManyField(User,blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class InvitationPost(Post):
+    event_name = models.CharField(max_length=255)
+    user = models.ManyToManyField(User,blank=True)
+    group = models.ManyToManyField(Group, blank=True)
+
+    def __str__(self):
+        return self.event_name
+
+
+class Interaction(BaseModel):
+    user = models.ForeignKey(User, on_delete=CASCADE)
+    post = models.ForeignKey(Post, on_delete=CASCADE)
+
+
+class Reaction(Interaction):
+    reaction_choices = [
+        (1, 'Like'),
+        (2, 'Haha'),
+        (3, 'Love')
+    ]
+    reaction = models.IntegerField(
+        choices=reaction_choices,
+        default=1,
+    )
+
+    class Meta:
+        unique_together = ('user','post')
+
+    def __str__(self):
+        return self.reaction
+
+
+class Comment(Interaction):
+    content = models.TextField(null=False)
+    image = CloudinaryField('comments', null=True, blank=True)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.content
+
