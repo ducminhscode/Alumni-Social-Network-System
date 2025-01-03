@@ -12,11 +12,12 @@ class BaseModel(models.Model):
 
     class Meta:
         abstract = True
+        ordering = ["-id"]
 
 
 class User(AbstractUser):
-    avatar = CloudinaryField('avatar-user', null=False,blank=True)
-    cover_avatar = CloudinaryField('cover-avatar-user', null=True, blank=True)
+    avatar = CloudinaryField('avatar', null=False,blank=True)
+    cover_avatar = CloudinaryField('cover-avatar', null=True, blank=True)
     gender = models.BooleanField(default=True, null=True)
     role_choices = [
         (1, 'Alumni'),
@@ -34,20 +35,23 @@ class User(AbstractUser):
 class RegisterRequest(models.Model):
     alumni_id = models.CharField(max_length=255)
     is_pending = models.BooleanField(default=True)
+
     user = models.OneToOneField(User, on_delete=models.PROTECT, primary_key=True)
 
 
 class Post(BaseModel):
     content = models.TextField()
     lock_comment = models.BooleanField(default=False)
+
     user = models.ForeignKey(User,on_delete=models.CASCADE, null=False)
 
     def __str__(self):
         return self.content
 
 class PostImage(models.Model):
-    image = CloudinaryField('posts', null=True, blank=True)
-    post = models.ForeignKey(Post, on_delete=CASCADE, primary_key=True)
+    image = CloudinaryField('Post Image', null=True, blank=True)
+
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, primary_key=True)
 
 
 class SurveyPost(Post):
@@ -73,8 +77,9 @@ class SurveyQuestionType(models.Model):
 
 class SurveyQuestion(models.Model):
     content_question = models.TextField()
-    survey_post = models.ForeignKey(SurveyPost,  on_delete=CASCADE)
-    survey_question_type = models.ForeignKey(SurveyQuestionType, on_delete=CASCADE)
+
+    survey_post = models.ForeignKey(SurveyPost,  on_delete=models.CASCADE)
+    survey_question_type = models.ForeignKey(SurveyQuestionType, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.content_question
@@ -83,7 +88,8 @@ class SurveyQuestion(models.Model):
 class SurveyQuestionOption(models.Model):
     option_value = models.TextField()
     multi_choices = models.BooleanField(default=False)
-    survey_question = models.ForeignKey(SurveyQuestion, on_delete=CASCADE)
+
+    survey_question = models.ForeignKey(SurveyQuestion, on_delete=models.CASCADE)
     user = models.ManyToManyField(User, blank=True)
 
     def __str__(self):
@@ -92,6 +98,7 @@ class SurveyQuestionOption(models.Model):
 
 class Group(models.Model):
     name = models.CharField(max_length=255)
+
     user = models.ManyToManyField(User,blank=True)
 
     def __str__(self):
@@ -100,16 +107,20 @@ class Group(models.Model):
 
 class InvitationPost(Post):
     event_name = models.CharField(max_length=255)
-    user = models.ManyToManyField(User,blank=True)
-    group = models.ManyToManyField(Group, blank=True)
+
+    invitation_users = models.ManyToManyField(User,blank=True)
+    groups = models.ManyToManyField(Group, blank=True)
 
     def __str__(self):
         return self.event_name
 
 
 class Interaction(BaseModel):
-    user = models.ForeignKey(User, on_delete=CASCADE)
-    post = models.ForeignKey(Post, on_delete=CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    post = models.ForeignKey(Post, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
 
 
 class Reaction(Interaction):
@@ -132,11 +143,11 @@ class Reaction(Interaction):
 
 class Comment(Interaction):
     content = models.TextField(null=False)
-    image = CloudinaryField('comments', null=True, blank=True)
+    image = CloudinaryField('Comment Images', null=True, blank=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_date']
 
     def __str__(self):
         return self.content
