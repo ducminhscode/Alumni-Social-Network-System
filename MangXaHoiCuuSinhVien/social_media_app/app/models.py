@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from cloudinary.models import CloudinaryField
 from enum import IntEnum
+from django.utils import timezone
 
 class BaseModel(models.Model):
     created_date = models.DateTimeField(auto_now_add=True, null=True)
@@ -15,7 +16,7 @@ class BaseModel(models.Model):
 
 class User(AbstractUser):
     avatar = CloudinaryField('avatar', null=False, blank=False)
-    cover_avatar = CloudinaryField('cover-avatar', null=True, blank=True)
+    cover = CloudinaryField('cover', null=True, blank=True)
     gender = models.BooleanField(default=True, null=True)
     email = models.EmailField(unique=True, null=False, max_length=254)
     role_choices = [
@@ -27,23 +28,38 @@ class User(AbstractUser):
         default=1,
     )
 
-    register_form = models.OneToOneField('RegisterForm', on_delete=models.CASCADE, null=True)
-
     def __str__(self):
         return self.username
 
 
-class RegisterForm(BaseModel):
-    alumni_code = models.CharField(max_length=10, unique=True)
-    username = models.CharField(max_length=50, unique=True)
-    password = models.CharField(max_length=255, default="ou@123")
-    email = models.EmailField(unique=True, null=False, max_length=255)
-    avatar = CloudinaryField('avatar', null=False, blank=True)
-    cover_avatar = CloudinaryField('cover_avatar', null=True, blank=True)
-    gender = models.BooleanField(default=True, null=True)
+class Alumni(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    student_id = models.CharField(max_length=20, unique=True)
+    VERIFICATION_STATUS = (
+        (1, 'Pending'),
+        (2, 'Confirmed'),
+        (3, 'Rejected'),
+    )
+    status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default=1)
 
     def __str__(self):
-        return self.alumni_code
+        return str(self.user)
+
+
+class Teacher(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    is_password_changed = models.BooleanField(default=False)
+    password_reset_time = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return str(self.user)
+
+    def is_password_change_expired(self):
+        if self.password_reset_time:
+            time_difference = timezone.now() - self.password_reset_time
+            return time_difference.total_seconds() > 24*3600
+        return False
+
 
 class Post(BaseModel):
     content = models.TextField()
