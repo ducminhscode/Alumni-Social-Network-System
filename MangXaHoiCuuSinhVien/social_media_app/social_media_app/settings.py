@@ -56,6 +56,8 @@ cloudinary.config(
     api_secret=os.getenv('API_SECRET')
 )
 
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -143,5 +145,14 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'lock_expired_accounts_every_hour': {
+        'task': 'accounts.tasks.lock_expired_teacher_accounts',
+        'schedule': crontab(minute=0),
+    },
+}
 
 

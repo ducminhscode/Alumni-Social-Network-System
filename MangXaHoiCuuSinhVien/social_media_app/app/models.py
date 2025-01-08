@@ -15,17 +15,17 @@ class BaseModel(models.Model):
 
 
 class User(AbstractUser):
-    avatar = CloudinaryField('avatar', null=False, blank=False)
-    cover = CloudinaryField('cover', null=True, blank=True)
-    gender = models.BooleanField(default=True, null=True)
-    email = models.EmailField(unique=True, null=False, max_length=254)
+    avatar = CloudinaryField('avatar', null=False, blank=False, folder='lthd', default='https://res.cloudinary.com/dqw4mc8dg/image/upload/v1736348093/aj6sc6isvelwkotlo1vw_zxmebm.png')
+    cover = CloudinaryField('cover', null=True, blank=True, folder='lthd')
+    email = models.EmailField(unique=True, null=False, max_length=255)
     role_choices = [
+        (0, 'Admin'),
         (1, 'Alumni'),
         (2, 'Teacher'),
     ]
     role = models.IntegerField(
         choices=role_choices,
-        default=1,
+        default=0,
     )
 
     def __str__(self):
@@ -34,7 +34,7 @@ class User(AbstractUser):
 
 class Alumni(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
-    student_id = models.CharField(max_length=20, unique=True)
+    student_code = models.CharField(max_length=10, unique=True)
     VERIFICATION_STATUS = (
         (1, 'Pending'),
         (2, 'Confirmed'),
@@ -48,7 +48,7 @@ class Alumni(models.Model):
 
 class Teacher(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
-    is_password_changed = models.BooleanField(default=False)
+    must_change_password = models.BooleanField(default=True)
     password_reset_time = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -71,7 +71,7 @@ class Post(BaseModel):
         return self.content
 
 class PostImage(models.Model):
-    image = CloudinaryField('Post Image', null=True, blank=True)
+    image = CloudinaryField('Post Image', null=True, blank=True, folder='lthd')
 
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
 
@@ -167,7 +167,7 @@ class Reaction(Interaction):
 
 class Comment(Interaction):
     content = models.TextField(null=False)
-    image = CloudinaryField('Comment Images', null=True, blank=True)
+    image = CloudinaryField('Comment Images', null=True, blank=True, folder='lthd')
 
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
 
