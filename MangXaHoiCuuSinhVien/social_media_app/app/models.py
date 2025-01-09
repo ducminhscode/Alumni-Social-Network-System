@@ -4,50 +4,57 @@ from cloudinary.models import CloudinaryField
 from enum import IntEnum
 from django.utils import timezone
 
+
+
+
 class BaseModel(models.Model):
     created_date = models.DateTimeField(auto_now_add=True, null=True)
     updated_date = models.DateTimeField(auto_now=True,null=True)
+    deleted_date = models.DateTimeField(null=True, blank=True)
     active = models.BooleanField(default=True)
 
     class Meta:
         abstract = True
         ordering = ["-id"]
 
+    def soft_delete(self, using=None, keep_parents=False):
+        self.deleted_date = timezone.now()
+        self.active = False
+        self.save()
+
+
+class Role(IntEnum):
+    ADMIN = 0
+    ALUMNI = 1
+    TEACHER = 2
+
+    @classmethod
+    def choices(cls):
+        return [(role.value, role.name.capitalize()) for role in cls]
+
 
 class User(AbstractUser):
-    avatar = CloudinaryField('avatar', null=False, blank=False, folder='lthd', default='https://res.cloudinary.com/dqw4mc8dg/image/upload/v1736348093/aj6sc6isvelwkotlo1vw_zxmebm.png')
+    avatar = CloudinaryField('avatar', null=False, blank=False, folder='lthd',
+        default='https://res.cloudinary.com/dqw4mc8dg/image/upload/v1736348093/aj6sc6isvelwkotlo1vw_zxmebm.png')
     cover = CloudinaryField('cover', null=True, blank=True, folder='lthd')
     email = models.EmailField(unique=True, null=False, max_length=255)
-    role_choices = [
-        (0, 'Admin'),
-        (1, 'Alumni'),
-        (2, 'Teacher'),
-    ]
     role = models.IntegerField(
-        choices=role_choices,
-        default=0,
+        choices=Role.choices(),
+        default=Role.ADMIN.value
     )
-
-    def __str__(self):
-        return self.username
 
 
 class Alumni(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     student_code = models.CharField(max_length=10, unique=True)
-    VERIFICATION_STATUS = (
-        (1, 'Pending'),
-        (2, 'Confirmed'),
-        (3, 'Rejected'),
-    )
-    status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default=1)
+    is_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return str(self.user)
 
 
 class Teacher(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     must_change_password = models.BooleanField(default=True)
     password_reset_time = models.DateTimeField(null=True, blank=True)
 
@@ -55,10 +62,9 @@ class Teacher(models.Model):
         return str(self.user)
 
     def is_password_change_expired(self):
-        if self.password_reset_time:
-            time_difference = timezone.now() - self.password_reset_time
-            return time_difference.total_seconds() > 24*3600
-        return False
+        if not self.password_reset_time:
+            return False
+        return (timezone.now() - self.password_reset_time).total_seconds() > 86400
 
 
 class Post(BaseModel):
@@ -76,10 +82,6 @@ class PostImage(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
 
 
-class SurveyPost(Post):
-    end_time = models.DateTimeField()
-
-
 class SurveyType(IntEnum):
     TRAINING_PROGRAM = 1
     RECRUITMENT_INFORMATION = 2
@@ -91,19 +93,19 @@ class SurveyType(IntEnum):
         return [(type.value, type.name.replace('_', ' ').capitalize()) for type in cls]
 
 
-class SurveyQuestionType(models.Model):
-    type_survey = models.IntegerField(choices=SurveyType.choices(),
-                                      default=SurveyType.TRAINING_PROGRAM.value)
-
+class SurveyPost(Post):
+    end_time = models.DateTimeField()
+    survey_type = models.IntegerField(choices=SurveyType.choices(),
+                                        default=SurveyType.TRAINING_PROGRAM.value)
     def __str__(self):
-        return str(self.type_survey)
+        return f"{self.content} - {SurveyType(self.survey_type).name.capitalize()}"
 
 
 class SurveyQuestion(models.Model):
     question = models.TextField()
+    multi_choice = models.BooleanField(default=False)
 
     survey_post = models.ForeignKey(SurveyPost,  on_delete=models.CASCADE)
-    survey_question_type = models.ForeignKey(SurveyQuestionType, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.question
@@ -111,10 +113,9 @@ class SurveyQuestion(models.Model):
 
 class SurveyOption(models.Model):
     option = models.TextField()
-    multi_choices = models.BooleanField(default=False)
 
     survey_question = models.ForeignKey(SurveyQuestion, on_delete=models.CASCADE)
-    user = models.ManyToManyField(User, blank=True)
+    users = models.ManyToManyField(User, blank=True)
 
     def __str__(self):
         return self.option
@@ -123,7 +124,7 @@ class SurveyOption(models.Model):
 class Group(BaseModel):
     group_name = models.CharField(max_length=255, unique=True)
 
-    user = models.ManyToManyField(User,blank=True)
+    users = models.ManyToManyField(User,blank=True)
 
     def __str__(self):
         return self.group_name
@@ -132,7 +133,7 @@ class Group(BaseModel):
 class InvitationPost(Post):
     event_name = models.CharField(max_length=255)
 
-    invitation_users = models.ManyToManyField(User, blank=True)
+    users = models.ManyToManyField(User, blank=True)
     groups = models.ManyToManyField(Group, blank=True)
 
     def __str__(self):
@@ -147,22 +148,24 @@ class Interaction(BaseModel):
         abstract = True
 
 
+class ReactionType(IntEnum):
+    LIKE = 1
+    HAHA = 2
+    LOVE = 3
+
+    @classmethod
+    def choices(cls):
+        return [(reaction.value, reaction.name.capitalize()) for reaction in cls]
+
+
 class Reaction(Interaction):
-    reaction_choices = [
-        (1, 'Like'),
-        (2, 'Haha'),
-        (3, 'Love')
-    ]
-    reaction = models.IntegerField(
-        choices=reaction_choices,
-        default=1,
-    )
+    reaction = models.IntegerField(choices=ReactionType.choices(), default=ReactionType.LIKE.value)
 
     class Meta:
         unique_together = ('user','post')
 
     def __str__(self):
-        return str(self.reaction)
+        return f"{self.user.username} - {ReactionType(self.reaction).name} on Post {self.post.id}"
 
 
 class Comment(Interaction):
@@ -171,5 +174,10 @@ class Comment(Interaction):
 
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
 
+    def get_replies(self):
+        return Comment.objects.filter(parent=self).order_by("created_date")
+
     def __str__(self):
-        return self.content
+        if self.parent:
+            return f"Reply to {self.parent.id} - {self.content[:30]}"
+        return self.content[:30]
