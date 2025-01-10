@@ -170,7 +170,7 @@ class Reaction(Interaction):
 
 class Comment(Interaction):
     content = models.TextField(null=False)
-    image = CloudinaryField('Comment Images', null=True, blank=True, folder='lthd')
+    image = CloudinaryField('Comment Image', null=True, blank=True, folder='lthd')
 
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
 
