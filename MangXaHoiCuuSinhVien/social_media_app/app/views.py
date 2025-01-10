@@ -1,14 +1,14 @@
-from celery.apps.multi import MultiParser
-from rest_framework.parsers import MultiPartParser
 from django.shortcuts import render
-from django.http import HttpResponse
-from oauthlib.uri_validate import query
+from rest_framework import viewsets, generics, status
+from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from sqlalchemy.dialects.mssql.information_schema import views
-from tutorial.quickstart.serializers import UserSerializer
-from yaml import serialize
+from rest_framework.parsers import MultiPartParser
+from rest_framework.response import Response
 
-from . import paginators
+from .models import User, Alumni, Teacher
+from .perms import AdminPermission, AlumniPermission
+from .serializers import UserSerializer, AlumniSerializer, TeacherSerializer
+from .paginators import Pagination
 
 
 def index(request):
@@ -18,84 +18,51 @@ def index(request):
 
 # Create your views here.
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status, viewsets, generics, permissions
-from .serializers import AlumniSerializer, TeacherSerializer
-from rest_framework.permissions import AllowAny, IsAdminUser
-from .tasks import send_new_account_email
-from .models import User, Alumni, Teacher
-from rest_framework import serializers
-from rest_framework.viewsets import ModelViewSet
-
 class UserViewSet(viewsets.ViewSet, generics.ListAPIView):
     queryset = User.objects.filter(is_active=True)
     serializer_class = UserSerializer
-    parser_classes = [MultiPartParser, ]
+    pagination_class = Pagination
+    permission_classes = [AdminPermission]
 
 
-class AlumniViewSet(viewsets.ViewSet, generics.ListAPIView):
+
+
+class AlumniViewSet(viewsets.ViewSet, generics.CreateAPIView):
     queryset = Alumni.objects.all()
     serializer_class = AlumniSerializer
-    pagination_class = paginators.AlumniPagination
+    pagination_class = Pagination
+    parser_classes = [MultiPartParser, ]
 
-    def get_queryset(self):
-        query = self.queryset
-        q=self.request.query_params.get("q")
+    @action(methods=['get'], url_path='list-alumni', detail=False, permission_classes=[AdminPermission])
+    def list_alumni(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
-        if q:
-            query = query.filter(subject__icontains=q)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
-        return query
+    @action(methods=['patch'], url_path='approve-alumni', detail=True, permission_classes=[AdminPermission])
+    def approve_alumni(self, request, pk=None):
+        alumni = get_object_or_404(Alumni, pk=pk)
 
+        if alumni.is_verified:
+            return Response({"error": "Tài khoản này đã được duyệt."}, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-def register_alumni(request):
-    serializer = AlumniSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response({'message': 'Đăng ký thành công. Vui lòng chờ quản trị viên xác nhận.'}, status=status.HTTP_201_CREATED)
-    else:
-        print(serializer.errors)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-@api_view(['PATCH'])
-@permission_classes([permissions.IsAdminUser])
-def approve_alumni(request, pk):
-    try:
-        alumni = Alumni.object.get(pk=pk)
         alumni.is_verified = True
         alumni.save()
-        return Response({'message': 'Đã cho phép đăng ký đối với người dùng này.'}, status=status.HTTP_200_OK)
-    except Alumni.DoesNotExist:
-        return Response({'error': 'Đã thực hiện xác nhận với yêu cầu này.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {"message": "Tài khoản cựu sinh viên đã được duyệt.", "alumni_id": alumni.id},
+            status=status.HTTP_200_OK
+        )
 
 
 
-# @api_view(['PATCH'])
-# @permission_classes([IsAdminUser])
-# def reject_alumni(request, pk):
-#     alumni = get_object_or_404(Alumni, pk=pk)
-#     if alumni.status != '1':
-#         return Response({'error': 'Đã thực hiện xác nhận với yêu cầu này.'}, status=status.HTTP_400_BAD_REQUEST)
-#     alumni.status = '3'
-#     alumni.save()
-#     return Response({'message': 'Đã từ chối đăng ký đối với người dùng này.'}, status=status.HTTP_200_OK)
-
-
-
-@api_view(['POST'])
-@permission_classes([IsAdminUser]) # Chỉ admin mới được tạo tài khoản
-def create_teacher_account(request):
-    serializer = TeacherSerializer(data=request.data)
-    if serializer.is_valid():
-        teacher = serializer.save()
-        user = teacher.user
-        user.set_password('ou@123')
-        user.save()
-        send_new_account_email.delay(user.pk)
-        return Response({'message': 'Tạo tài khoản giảng viên thành công.'}, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+class TeacherViewSet(viewsets.ViewSet, generics.CreateAPIView):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    pagination_class = Pagination
+    parser_classes = [MultiPartParser, ]

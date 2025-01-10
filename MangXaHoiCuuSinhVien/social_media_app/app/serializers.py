@@ -1,66 +1,105 @@
-from django.utils import timezone
-from rest_framework import serializers
-from django.contrib.auth.models import User
-from .models import Alumni, Teacher
+from rest_framework.serializers import ModelSerializer, ValidationError, CharField, EmailField, URLField
+from .models import User, Alumni, Teacher
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(ModelSerializer):
 
-    password = serializers.CharField(write_only=True)
-    password_confirm = serializers.CharField(write_only=True)
+    def create(self, validated_data):
+        data = validated_data.copy()
+        u = User(**data)
+        u.role = 1
+        u.set_password(u.password)
+        u.save()
+        return u
+
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'password', 'confirm_password']
+        fields = ["id", "username", "password", "avatar", "cover", "first_name", "last_name", "email"]
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            }
+        }
 
 
-    def validate(self, data):
-        if data['password'] != data['password_confirm']:
-            raise serializers.ValidationError({"password": "Mật khẩu không khớp."})
-        return data
+class AlumniSerializer(ModelSerializer):
+    username = CharField(write_only=True)
+    email = EmailField(write_only=True)
+    password = CharField(write_only=True, required=False, default='ou@123')
+    avatar = URLField(write_only=True)
+    cover = URLField(write_only=True)
+    first_name=CharField(write_only=True)
+    last_name = CharField(write_only=True)
+
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
-        user.save()
-        return user
+        username = validated_data.pop('username')
+        password = validated_data.pop('password')
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        email = validated_data.pop('email')
+        avatar = validated_data.pop('avatar')
+        cover = validated_data.pop('cover')
+        student_code = validated_data.pop('student_code')
 
+        if not avatar:
+            raise ValidationError({"avatar": "Chọn Avatar"})
 
-class AlumniSerializer(serializers.ModelSerializer):
-    user = UserSerializer()
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            avatar=avatar,
+            cover=cover,
+            role=1
+        )
+
+        alumni = Alumni.objects.create(user=user, student_code=student_code)
+        return alumni
 
     class Meta:
         model = Alumni
-        fields = ['user', 'student_code']
+        fields = ["id", "username", "password", "first_name", "last_name", "email", "avatar", "cover", "student_code"]
+
+
+class TeacherSerializer(ModelSerializer):
+    username = CharField(write_only=True)
+    email = EmailField(write_only=True)
+    password = CharField(write_only=True, required=False, default='ou@123')
+    avatar = URLField(write_only=True)
+    cover = URLField(write_only=True)
+    first_name=CharField(write_only=True)
+    last_name = CharField(write_only=True)
+
 
     def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = UserSerializer.create(UserSerializer(), validated_data=user_data)
-        user.role = 1
+        username = validated_data.pop('username')
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        email = validated_data.pop('email')
+        avatar = validated_data.pop('avatar')
+        cover = validated_data.pop('cover')
 
-        alumni = Alumni.objects.create(user=user, **validated_data)
-        return alumni
+        if not avatar:
+            raise ValidationError({"avatar": "Chọn Avatar"})
 
-# class UserSerializer(serializers.ModelSerializer):
-#     password = serializers.CharField(write_only=True)
-#
-#     class Meta:
-#         model = User
-#         fields = ['username', 'email', 'password', 'first_name', 'last_name']
-#
-#     def create(self, validated_data):
-#         user = User.objects.create_user(**validated_data)
-#         return user
+        user = User.objects.create_user(
+            username=username,
+            password='ou@123',
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            avatar=avatar,
+            cover=cover,
+            role=2
+        )
 
-class TeacherSerializer(serializers.ModelSerializer):
-    user = UserSerializer()
+        teacher = Teacher.objects.create(user=user)
+        return teacher
 
     class Meta:
         model = Teacher
-        fields = ['user']
-
-    def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = UserSerializer.create(UserSerializer(), validated_data=user_data)
-        user.role = 2
-        teacher = Teacher.objects.create(user=user, password_reset_time=timezone.now())
-        return teacher
+        fields = ["id", "username","password", "first_name", "last_name", "email", "avatar", "cover"]
