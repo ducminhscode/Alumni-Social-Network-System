@@ -1,101 +1,131 @@
-from celery.apps.multi import MultiParser
-from rest_framework.parsers import MultiPartParser
-from django.shortcuts import render
-from django.http import HttpResponse
-from oauthlib.uri_validate import query
-from rest_framework.generics import get_object_or_404
-from sqlalchemy.dialects.mssql.information_schema import views
-from tutorial.quickstart.serializers import UserSerializer
-from yaml import serialize
-
-from . import paginators
-
-
-def index(request):
-    return render(request, template_name='index.html', context={
-        'name':'SocialMediaApp'
-    })
-
-# Create your views here.
-
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import viewsets, generics, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status, viewsets, generics, permissions
-from .serializers import AlumniSerializer, TeacherSerializer
-from rest_framework.permissions import AllowAny, IsAdminUser
-from .tasks import send_new_account_email
+from rest_framework.permissions import IsAuthenticated
+from django.utils.timezone import now as timezone_now
+from django.contrib.auth import authenticate
+from django.core.mail import send_mail
 from .models import User, Alumni, Teacher
-from rest_framework import serializers
-from rest_framework.viewsets import ModelViewSet
-
-class UserViewSet(viewsets.ViewSet, generics.ListAPIView):
-    queryset = User.objects.filter(is_active=True)
-    serializer_class = UserSerializer
-    parser_classes = [MultiPartParser, ]
+from . import serializers
 
 
-class AlumniViewSet(viewsets.ViewSet, generics.ListAPIView):
+
+class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     queryset = Alumni.objects.all()
-    serializer_class = AlumniSerializer
-    pagination_class = paginators.AlumniPagination
+    serializer_class = serializers.AlumniSerializer
 
-    def get_queryset(self):
-        query = self.queryset
-        q=self.request.query_params.get("q")
+    @action(methods=['post'], url_path='register-alumni', detail=False)
+    def register_alumni(self, request):
+        serializer = serializers.AlumniSerializer(data=request.data)
+        if serializer.is_valid():
+            # Validate avatar presence
+            avatar = serializer.validated_data['user'].get('avatar', None)
+            if not avatar:
+                return Response({"error": "Avatar is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if q:
-            query = query.filter(subject__icontains=q)
+            # Save alumni data and deactivate account (admin approval needed)
+            alumni = serializer.save()
+            alumni.user.is_active = False
+            alumni.user.save()
 
-        return query
-
-
-@api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-def register_alumni(request):
-    serializer = AlumniSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response({'message': 'Đăng ký thành công. Vui lòng chờ quản trị viên xác nhận.'}, status=status.HTTP_201_CREATED)
-    else:
-        print(serializer.errors)
+            return Response({"message": "Alumni registered successfully. Pending admin approval."},
+                            status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-
-@api_view(['PATCH'])
-@permission_classes([permissions.IsAdminUser])
-def approve_alumni(request, pk):
-    try:
-        alumni = Alumni.object.get(pk=pk)
-        alumni.is_verified = True
-        alumni.save()
-        return Response({'message': 'Đã cho phép đăng ký đối với người dùng này.'}, status=status.HTTP_200_OK)
-    except Alumni.DoesNotExist:
-        return Response({'error': 'Đã thực hiện xác nhận với yêu cầu này.'}, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-# @api_view(['PATCH'])
-# @permission_classes([IsAdminUser])
-# def reject_alumni(request, pk):
-#     alumni = get_object_or_404(Alumni, pk=pk)
-#     if alumni.status != '1':
-#         return Response({'error': 'Đã thực hiện xác nhận với yêu cầu này.'}, status=status.HTTP_400_BAD_REQUEST)
-#     alumni.status = '3'
-#     alumni.save()
-#     return Response({'message': 'Đã từ chối đăng ký đối với người dùng này.'}, status=status.HTTP_200_OK)
-
-
-
-@api_view(['POST'])
-@permission_classes([IsAdminUser]) # Chỉ admin mới được tạo tài khoản
-def create_teacher_account(request):
-    serializer = TeacherSerializer(data=request.data)
-    if serializer.is_valid():
-        teacher = serializer.save()
-        user = teacher.user
-        user.set_password('ou@123')
-        user.save()
-        send_new_account_email.delay(user.pk)
-        return Response({'message': 'Tạo tài khoản giảng viên thành công.'}, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # @action(methods=['post'], url_path='login', detail=False, permission_classes=[])
+    # def login(self, request):
+    #     """
+    #     Endpoint for user login.
+    #     Validates alumni, teacher, or admin role.
+    #     """
+    #     username = request.data.get('username')
+    #     password = request.data.get('password')
+    #
+    #     user = authenticate(username=username, password=password)
+    #
+    #     if not user:
+    #         return Response({"error": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
+    #
+    #     if not user.is_active:
+    #         return Response({"error": "Account is deactivated. Contact admin for support."},
+    #                         status=status.HTTP_403_FORBIDDEN)
+    #
+    #     # Role-based login response
+    #     role_mapping = {0: "Admin", 1: "Alumni", 2: "Teacher"}
+    #     role = role_mapping.get(user.role, "Unknown")
+    #
+    #     return Response({"message": f"Logged in as {role}.", "role": role}, status=status.HTTP_200_OK)
+    #
+    # @action(methods=['post'], url_path='register-teacher', detail=False, permission_classes=[IsAuthenticated])
+    # def register_teacher(self, request):
+    #     """
+    #     Endpoint for admin to create teacher accounts.
+    #     Sends default login info via email.
+    #     """
+    #     if request.user.role != 0:
+    #         return Response({"error": "Only admins can create teacher accounts."}, status=status.HTTP_403_FORBIDDEN)
+    #
+    #     serializer = serializers.TeacherSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         teacher = serializer.save()
+    #         teacher.user.set_password('ou@123')  # Default password
+    #         teacher.user.is_active = True
+    #         teacher.user.save()
+    #
+    #         # Send email to the teacher with login credentials
+    #         send_mail(
+    #             subject="Teacher Account Details",
+    #             message=f"Welcome! Your username is {teacher.user.username}. Login with the password 'ou@123'. You must change your password within 24 hours.",
+    #             from_email="admin@system.com",
+    #             recipient_list=[teacher.user.email],
+    #             fail_silently=True,
+    #         )
+    #         return Response({"message": "Teacher account created successfully. Email sent!"},
+    #                         status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #
+    # @action(methods=['post'], url_path='change-password', detail=True, permission_classes=[IsAuthenticated])
+    # def change_password(self, request, pk):
+    #     """
+    #     Allow teachers to change their password within the 24-hour period.
+    #     """
+    #     user = User.objects.filter(pk=pk, role=2).first()  # Retrieve only teacher accounts
+    #     if not user:
+    #         return Response({"error": "Teacher not found."}, status=status.HTTP_404_NOT_FOUND)
+    #
+    #     new_password = request.data.get('new_password')
+    #     if not new_password:
+    #         return Response({"error": "New password is required."}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     teacher = Teacher.objects.filter(user=user).first()
+    #     if teacher.is_password_change_expired():
+    #         user.is_active = False
+    #         user.save()
+    #         return Response({"error": "Password change expired. Contact admin for a reset."},
+    #                         status=status.HTTP_403_FORBIDDEN)
+    #
+    #     # Update password and reset password_reset_time
+    #     user.set_password(new_password)
+    #     user.save()
+    #     teacher.password_reset_time = timezone_now()
+    #     teacher.save()
+    #
+    #     return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+    #
+    # @action(methods=['post'], url_path='reset-password-expiry', detail=True, permission_classes=[IsAuthenticated])
+    # def reset_password_expiry(self, request, pk):
+    #     """
+    #     Admin action to reset password expiry for a teacher account.
+    #     """
+    #     if request.user.role != 0:
+    #         return Response({"error": "Only admins can reset password expiry."}, status=status.HTTP_403_FORBIDDEN)
+    #
+    #     user = User.objects.filter(pk=pk, role=2).first()
+    #     if not user:
+    #         return Response({"error": "Teacher not found."}, status=status.HTTP_404_NOT_FOUND)
+    #
+    #     teacher = Teacher.objects.filter(user=user).first()
+    #     teacher.password_reset_time = timezone_now()  # Reset the expiry time
+    #     teacher.save()
+    #
+    #     return Response({"message": "Password expiry reset successfully."}, status=status.HTTP_200_OK)

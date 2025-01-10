@@ -6,12 +6,17 @@ from .models import Alumni, Teacher
 
 class UserSerializer(serializers.ModelSerializer):
 
-    password = serializers.CharField(write_only=True)
-    password_confirm = serializers.CharField(write_only=True)
-
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'password', 'confirm_password']
+        fields = ['id', 'email', 'first_name', 'last_name', 'username', 'password', 'confirm_password', 'avatar', 'cover']
+        extra_kwargs = {
+            'password': {
+                'write_only': True
+            },
+            'password_confirm': {
+                'write_only': True
+            }
+        }
 
 
     def validate(self, data):
@@ -40,16 +45,6 @@ class AlumniSerializer(serializers.ModelSerializer):
         alumni = Alumni.objects.create(user=user, **validated_data)
         return alumni
 
-# class UserSerializer(serializers.ModelSerializer):
-#     password = serializers.CharField(write_only=True)
-#
-#     class Meta:
-#         model = User
-#         fields = ['username', 'email', 'password', 'first_name', 'last_name']
-#
-#     def create(self, validated_data):
-#         user = User.objects.create_user(**validated_data)
-#         return user
 
 class TeacherSerializer(serializers.ModelSerializer):
     user = UserSerializer()
