@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework import viewsets, generics, status
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.response import Response
 
 from .models import User, Alumni, Teacher
@@ -28,10 +28,10 @@ class UserViewSet(viewsets.ViewSet, generics.ListAPIView):
 
 
 class AlumniViewSet(viewsets.ViewSet, generics.CreateAPIView):
-    queryset = Alumni.objects.all()
+    queryset = Alumni.objects.select_related('user') # queryset = Alumni.objects.all()
     serializer_class = AlumniSerializer
     pagination_class = Pagination
-    parser_classes = [MultiPartParser, ]
+    parser_classes = [JSONParser, MultiPartParser, ]
 
     @action(methods=['get'], url_path='list-alumni', detail=False, permission_classes=[AdminPermission])
     def list_alumni(self, request, *args, **kwargs):
@@ -49,20 +49,46 @@ class AlumniViewSet(viewsets.ViewSet, generics.CreateAPIView):
         alumni = get_object_or_404(Alumni, pk=pk)
 
         if alumni.is_verified:
-            return Response({"error": "Tài khoản này đã được duyệt."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Tài khoản này đã được duyệt."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         alumni.is_verified = True
         alumni.save()
 
         return Response(
-            {"message": "Tài khoản cựu sinh viên đã được duyệt.", "alumni_id": alumni.id},
+            {"message": "Duyệt tài khoản thành công.", "alumni_id": alumni.id},
             status=status.HTTP_200_OK
         )
 
 
 
 class TeacherViewSet(viewsets.ViewSet, generics.CreateAPIView):
-    queryset = Teacher.objects.all()
+    queryset = Teacher.objects.select_related('user') # queryset = Teacher.objects.all()
     serializer_class = TeacherSerializer
     pagination_class = Pagination
-    parser_classes = [MultiPartParser, ]
+    parser_classes = [JSONParser, MultiPartParser, ]
+    permission_classes = [AdminPermission]
+
+    @action(methods=['get'], url_path='list-teacher', detail=False)
+    def list_teacher(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+    @action(methods=['patch'], url_path='reset-password-timer', detail=True)
+    def reset_password_time(self, request, pk=None):
+        teacher = get_object_or_404(Teacher, pk=pk)
+
+        if teacher.must_change_password==True and teacher.is_password_change_expired()==True:
+            teacher.unlock_account()
+            return Response({
+            "message": f"Thời gian đổi mật khẩu đã được đặt lại cho {teacher.user.username}."}, status=status.HTTP_200_OK)
+
+        return Response({"message":f"Tài khoản {teacher.user.username} đã đổi mật khẩu hoặc chưa hết thời gian đổi mật khẩu."},
+                        status=status.HTTP_400_BAD_REQUEST)

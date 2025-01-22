@@ -70,10 +70,18 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware'
 ]
 
 ROOT_URLCONF = 'social_media_app.urls'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('EMAIL_SEND')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
+DEFAULT_FROM_EMAIL = os.getenv('EMAIL_SEND')
 
 TEMPLATES = [
     {
@@ -90,6 +98,8 @@ TEMPLATES = [
         },
     },
 ]
+
+TIME = 86400
 
 WSGI_APPLICATION = 'social_media_app.wsgi.application'
 
@@ -162,7 +172,7 @@ from celery.schedules import crontab
 CELERY_BEAT_SCHEDULE = {
     'lock_expired_accounts_every_hour': {
         'task': 'accounts.tasks.lock_expired_teacher_accounts',
-        'schedule': crontab(minute=0),
+        'schedule': crontab(minute='*/1'),
     },
 }
 

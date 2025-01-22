@@ -1,5 +1,9 @@
-from rest_framework.serializers import ModelSerializer, ValidationError, CharField, EmailField, URLField
+import os
+
+from rest_framework.serializers import ModelSerializer, ValidationError
 from .models import User, Alumni, Teacher
+from django.core.mail import send_mail
+from django.utils import timezone
 
 
 class UserSerializer(ModelSerializer):
@@ -7,7 +11,7 @@ class UserSerializer(ModelSerializer):
     def create(self, validated_data):
         data = validated_data.copy()
         u = User(**data)
-        u.role = 1
+        u.role = 0
         u.set_password(u.password)
         u.save()
         return u
@@ -18,88 +22,87 @@ class UserSerializer(ModelSerializer):
         fields = ["id", "username", "password", "avatar", "cover", "first_name", "last_name", "email"]
         extra_kwargs = {
             'password': {
-                'write_only': True
+                'write_only': True,
+                'required': False
             }
         }
 
 
 class AlumniSerializer(ModelSerializer):
-    username = CharField(write_only=True)
-    email = EmailField(write_only=True)
-    password = CharField(write_only=True, required=False, default='ou@123')
-    avatar = URLField(write_only=True)
-    cover = URLField(write_only=True)
-    first_name=CharField(write_only=True)
-    last_name = CharField(write_only=True)
 
-
-    def create(self, validated_data):
-        username = validated_data.pop('username')
-        password = validated_data.pop('password')
-        first_name = validated_data.pop('first_name')
-        last_name = validated_data.pop('last_name')
-        email = validated_data.pop('email')
-        avatar = validated_data.pop('avatar')
-        cover = validated_data.pop('cover')
-        student_code = validated_data.pop('student_code')
-
-        if not avatar:
-            raise ValidationError({"avatar": "Chọn Avatar"})
-
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            avatar=avatar,
-            cover=cover,
-            role=1
-        )
-
-        alumni = Alumni.objects.create(user=user, student_code=student_code)
-        return alumni
+    user = UserSerializer()
 
     class Meta:
         model = Alumni
-        fields = ["id", "username", "password", "first_name", "last_name", "email", "avatar", "cover", "student_code"]
+        fields = ["id", "user", "student_code", "is_verified"]
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        user_data['role'] = 1
+        password = user_data.get('password')
+
+        if not password:
+            raise ValidationError({"password": "Yêu cầu mật khẩu."})
+
+        user = User.objects.create_user(
+            username=user_data.get('username'),
+            password=password,
+            first_name=user_data.get('first_name'),
+            last_name=user_data.get('last_name'),
+            email=user_data.get('email'),
+            avatar=user_data.get('avatar'),
+            role=user_data.get('role')
+        )
+
+        alumni = Alumni.objects.create(user=user, **validated_data)
+        return alumni
 
 
 class TeacherSerializer(ModelSerializer):
-    username = CharField(write_only=True)
-    email = EmailField(write_only=True)
-    password = CharField(write_only=True, required=False, default='ou@123')
-    avatar = URLField(write_only=True)
-    cover = URLField(write_only=True)
-    first_name=CharField(write_only=True)
-    last_name = CharField(write_only=True)
-
-
-    def create(self, validated_data):
-        username = validated_data.pop('username')
-        first_name = validated_data.pop('first_name')
-        last_name = validated_data.pop('last_name')
-        email = validated_data.pop('email')
-        avatar = validated_data.pop('avatar')
-        cover = validated_data.pop('cover')
-
-        if not avatar:
-            raise ValidationError({"avatar": "Chọn Avatar"})
-
-        user = User.objects.create_user(
-            username=username,
-            password='ou@123',
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            avatar=avatar,
-            cover=cover,
-            role=2
-        )
-
-        teacher = Teacher.objects.create(user=user)
-        return teacher
+    user = UserSerializer()
 
     class Meta:
         model = Teacher
-        fields = ["id", "username","password", "first_name", "last_name", "email", "avatar", "cover"]
+        fields = ["id", "user", "must_change_password", "password_reset_time"]
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        user_data['role'] = 2
+        password = user_data.get('password', 'ou@123')
+
+
+        user = User.objects.create_user(
+            username=user_data.get('username'),
+            password=password,
+            first_name=user_data.get('first_name'),
+            last_name=user_data.get('last_name'),
+            email=user_data.get('email'),
+            avatar=user_data.get('avatar'),
+            role=user_data.get('role')
+        )
+
+        teacher = Teacher.objects.create(user=user, **validated_data)
+        teacher.password_reset_time = timezone.now()
+
+        self.send_account_email(user, 'ou@123')
+
+        return teacher
+
+    def send_account_email(self, user, password):
+
+        subject = "Tài khoản giảng viên của bạn"
+        message = f"""
+        Chào {user.first_name},
+
+        Tài khoản giáo viên của bạn đã được tạo. Vui lòng sử dụng thông tin đăng nhập sau để đăng nhập:
+
+        Tên đăng nhập: {user.username}
+        Mật khẩu: {password}
+
+        Bạn phải thay đổi mật khẩu trong vòng 24 giờ, nếu không tài khoản của bạn sẽ bị khóa.
+
+        Trân Trọng,
+        Đội ngũ Admin
+        """
+        send_mail(subject, message, os.getenv('EMAIL_SEND'), [user.email])
+

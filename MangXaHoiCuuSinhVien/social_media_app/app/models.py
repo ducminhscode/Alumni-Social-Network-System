@@ -5,8 +5,6 @@ from enum import IntEnum
 from django.utils import timezone
 
 
-
-
 class BaseModel(models.Model):
     created_date = models.DateTimeField(auto_now_add=True, null=True)
     updated_date = models.DateTimeField(auto_now=True,null=True)
@@ -34,9 +32,9 @@ class Role(IntEnum):
 
 
 class User(AbstractUser):
-    avatar = CloudinaryField('avatar', null=False, blank=False, folder='lthd',
-        default='https://res.cloudinary.com/dqw4mc8dg/image/upload/v1736348093/aj6sc6isvelwkotlo1vw_zxmebm.png')
-    cover = CloudinaryField('cover', null=True, blank=True, folder='lthd')
+    avatar = CloudinaryField('avatar', null=False, blank=False, folder='MangXaHoi',
+        default='https://res.cloudinary.com/dp9b0dkkt/image/upload/v1736453398/de995be2-6311-4125-9ac2-19e11fcaf801.png')
+    cover = CloudinaryField('cover', null=True, blank=True, folder='MangXaHoi')
     email = models.EmailField(unique=True, null=False, max_length=255)
     role = models.IntegerField(
         choices=Role.choices(),
@@ -63,8 +61,21 @@ class Teacher(models.Model):
 
     def is_password_change_expired(self):
         if not self.password_reset_time:
-            return False
-        return (timezone.now() - self.password_reset_time).total_seconds() > 86400
+            return (timezone.now() - self.user.date_joined).total_seconds() > 1
+        return (timezone.now() - self.password_reset_time).total_seconds() > 1
+
+
+    def lock_account(self):
+        if self.is_password_change_expired():
+            self.user.is_active = False
+            self.user.save()
+
+
+    def unlock_account(self):
+        self.password_reset_time = timezone.now()
+        self.user.is_active = True
+        self.user.save()
+        self.save()
 
 
 class Post(BaseModel):
@@ -77,7 +88,7 @@ class Post(BaseModel):
         return self.content
 
 class PostImage(models.Model):
-    image = CloudinaryField('Post Image', null=True, blank=True, folder='lthd')
+    image = CloudinaryField('Post Image', null=True, blank=True, folder='MangXaHoi')
 
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
 
@@ -170,7 +181,7 @@ class Reaction(Interaction):
 
 class Comment(Interaction):
     content = models.TextField(null=False)
-    image = CloudinaryField('Comment Image', null=True, blank=True, folder='lthd')
+    image = CloudinaryField('Comment Image', null=True, blank=True, folder='MangXaHoi')
 
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
 
