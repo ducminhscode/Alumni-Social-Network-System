@@ -1,2 +1,1 @@
-# Alumni-Social-Network-System
-Hệ thống mạng xã cho hội cựu sinh viên
+# Social media app (Django Python + React Native + (redis and firebase)) 
